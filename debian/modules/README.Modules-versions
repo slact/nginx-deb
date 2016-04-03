@@ -28,9 +28,9 @@ README for Modules versions
   Homepage: https://github.com/gnosek/nginx-upstream-fair
   Version: a18b409
 
- nginx-push
-  Homepage: https://github.com/slact/nginx_http_push_module
-  Version: 0.73
+ nchan
+  Homepage: https://github.com/slact/nchan
+  Version: 0.99.10
 
  nginx-upload-progress
   Homepage: https://github.com/masterzen/nginx-upload-progress-module
