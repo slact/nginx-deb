@@ -309,7 +309,7 @@ Description: LUA module for Nginx
  integration of the powerful Lua threads (Lua coroutines) into the Nginx event
  model.
 
-Package: libnginx-mod-nginx
+Package: libnginx-mod-nchan
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Description: Fast, flexible pub/sub server
