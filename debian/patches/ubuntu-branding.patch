@@ -1,0 +1,25 @@
+From 821bc6df392c7684840e59a684d65340a1f381bb Mon Sep 17 00:00:00 2001
+From: Leo P <junk@slact.net>
+Date: Mon, 4 Apr 2016 00:26:15 -0400
+Subject: [PATCH] branding
+
+---
+ src/core/nginx.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/core/nginx.h b/src/core/nginx.h
+index e416e90..9151ac2 100644
+--- a/src/core/nginx.h
++++ b/src/core/nginx.h
+@@ -11,7 +11,7 @@
+ 
+ #define nginx_version      1009011
+ #define NGINX_VERSION      "1.9.11"
+-#define NGINX_VER          "nginx/" NGINX_VERSION
++#define NGINX_VER          "nginx/" NGINX_VERSION "Ubuntu"
+ 
+ #ifdef NGX_BUILD
+ #define NGINX_VER_BUILD    NGINX_VER " (" NGX_BUILD ")"
+-- 
+1.9.1
+
