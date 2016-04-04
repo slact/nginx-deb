@@ -1,0 +1,18 @@
+Description: Add Ubuntu token to NGINX_VER
+Author: Adam Conrad <adconrad@ubuntu.com>
+Forwarded: not-needed
+Last-Update: 2016-02-29
+
+Index: b/src/core/nginx.h
+===================================================================
+--- a/src/core/nginx.h
++++ b/src/core/nginx.h
+@@ -11,7 +11,7 @@
+ 
+ #define nginx_version      1009013
+ #define NGINX_VERSION      "1.9.13"
+-#define NGINX_VER          "nginx/" NGINX_VERSION
++#define NGINX_VER          "nginx/" NGINX_VERSION " (Ubuntu)"
+ 
+ #ifdef NGX_BUILD
+ #define NGINX_VER_BUILD    NGINX_VER " (" NGX_BUILD ")"
