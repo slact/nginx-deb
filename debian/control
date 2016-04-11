@@ -213,7 +213,9 @@ Priority: extra
 Depends: nginx-common (= ${source:Version}),
          ${misc:Depends},
          ${perl:Depends},
-         ${shlibs:Depends}
+         ${shlibs:Depends},
+	 libhiredis
+Build-Depends: libhiredis-dev
 Breaks: nginx (<< 1.4.5-1)
 Provides: httpd, httpd-cgi, nginx
 Conflicts: nginx-full, nginx-light, nginx-core

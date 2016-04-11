@@ -1,3 +1,14 @@
+nginx (1.9.11-0ubuntu2) xenial; urgency=medium
+
+  * This is a bug-fix only upload and does not include any new changes to
+    features.
+  * debian/conf/sites-available/default: Modify PHP 'default example' settings
+    to account for php5 being replaced with php7.0 in Xenial. Also adapt the
+    UNIX socket path for php7.0-fpm to be the one used by default in Xenial.
+    (LP: #1547642)
+
+ -- Thomas Ward <teward@ubuntu.com>  Fri, 19 Feb 2016 14:13:28 -0500
+
 nginx (1.9.11-1) UNRELEASED; urgency=medium
 
   [ Christos Trochalakis ]
