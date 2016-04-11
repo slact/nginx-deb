@@ -311,7 +311,8 @@ Description: LUA module for Nginx
 
 Package: libnginx-mod-nchan
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}, libhiredis
+Build-Depends: libhiredis-dev
 Description: Fast, flexible pub/sub server
  Fast, flexible pub/sub server.
  .
