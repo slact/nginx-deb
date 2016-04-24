@@ -8,20 +8,7 @@ local messages=   'channel:messages:'..id
 local subscribers='channel:subscribers:'..id
 local pubsub=     'channel:pubsub:'..id
 
-local enable_debug=true
-local dbg = (function(on)
-if on then return function(...) 
-local arg, cur = {...}, nil
-for i = 1, #arg do
-  arg[i]=tostring(arg[i])
-end
-redis.call('echo', table.concat(arg))
-  end; else
-    return function(...) return; end
-  end
-end)(enable_debug)
-
-dbg(' ####### DELETE #######')
+redis.call('echo', ' ####### DELETE #######')
 local num_messages = 0
 --delete all the messages right now mister!
 local msg
