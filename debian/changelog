@@ -1,13 +1,36 @@
-nginx (1.9.11-0ubuntu2) xenial; urgency=medium
+nginx (1.9.14-0ubuntu1) xenial-proposed; urgency=medium
 
-  * This is a bug-fix only upload and does not include any new changes to
-    features.
-  * debian/conf/sites-available/default: Modify PHP 'default example' settings
-    to account for php5 being replaced with php7.0 in Xenial. Also adapt the
-    UNIX socket path for php7.0-fpm to be the one used by default in Xenial.
-    (LP: #1547642)
+  * New upstream release (1.9.14) - full changelog available at upstream
+    website - htp://nginx.org/en/CHANGES (LP: #1566392)
+  * All Ubuntu specific changes from 1.9.13-0ubuntu1, except noted below,
+    remain included in this upload.
+  * Remaining changes:
+    * Enable HTTP/2 module for nginx-full, nginx-extras, and nginx-core
+      (LP: #1565043)
+      - debian/rules: Enable HTTP/2 module building in flavor rules
+      - debian/control: Add HTTP/2 module to package descriptions.
+    * debian/patches/ubuntu-branding.patch: Refresh Ubuntu Branding patch.
 
- -- Thomas Ward <teward@ubuntu.com>  Fri, 19 Feb 2016 14:13:28 -0500
+ -- Thomas Ward <teward@ubuntu.com>  Fri, 01 Apr 2016 14:23:47 -0400
+
+nginx (1.9.13-0ubuntu1) xenial-proposed; urgency=medium
+
+  * New upstream release (1.9.13) - full changelog available at upstream
+    website - http://nginx.org/en/CHANGES (LP: #1563393)
+  * All Ubuntu specific changes from 1.9.12-0ubuntu1 remain included in
+    this upload.
+  * debian/patches/ubuntu-branding.patch: Refresh Ubuntu Branding patch.
+
+ -- Thomas Ward <teward@ubuntu.com>  Tue, 29 Mar 2016 18:47:36 -0400
+
+nginx (1.9.12-0ubuntu1) xenial; urgency=medium
+
+  * New upstream release (1.9.12) - full changelog available at upstream
+    website - http://nginx.org/en/CHANGES  (LP: #1549347)
+  * All Ubuntu specific changes from 1.9.11-0ubuntu1 and -0ubuntu2 remain
+    included in this upload.
+
+ -- Thomas Ward <teward@ubuntu.com>  Wed, 24 Feb 2016 10:26:31 -0500
 
 nginx (1.9.11-1) UNRELEASED; urgency=medium
 

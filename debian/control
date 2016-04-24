@@ -25,7 +25,7 @@ Build-Depends: autotools-dev,
                libxslt1-dev,
                po-debconf,
                zlib1g-dev
-Standards-Version: 3.9.6.0
+Standards-Version: 3.9.7.0
 Homepage: http://nginx.net
 Vcs-Git: https://anonscm.debian.org/cgit/collab-maint/nginx.git
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nginx.git
@@ -51,6 +51,7 @@ Description: small, powerful, scalable web/proxy server
 
 Package: nginx-doc
 Architecture: all
+Multi-Arch: foreign
 Section: doc
 Depends: lsb-base (>= 3.2-14), ${misc:Depends}
 Description: small, powerful, scalable web/proxy server - documentation
@@ -62,6 +63,7 @@ Description: small, powerful, scalable web/proxy server - documentation
 
 Package: nginx-common
 Architecture: all
+Multi-Arch: foreign
 Depends: lsb-base (>= 3.2-14), ${misc:Depends}
 Replaces: nginx (<< 0.8.54-4),
           nginx-extras (<< 0.8.54-4),
@@ -126,7 +128,15 @@ Description: nginx web/proxy server (core version) - debugging symbols
 
 Package: nginx-full
 Architecture: any
-Depends: nginx-common (= ${source:Version}), ${misc:Depends}, ${shlibs:Depends}
+Depends: nginx-common (= ${source:Version}),
+         libnginx-mod-http-geoip (= ${binary:Version}),
+         libnginx-mod-http-image-filter (= ${binary:Version}),
+         libnginx-mod-http-xslt-filter (= ${binary:Version}),
+         libnginx-mod-mail (= ${binary:Version}),
+         libnginx-mod-stream (= ${binary:Version}),
+         libnginx-mod-http-auth-pam (= ${binary:Version}),
+         ${misc:Depends},
+         ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
 Provides: httpd, httpd-cgi, nginx
 Conflicts: nginx-extras, nginx-light, nginx-core
@@ -188,7 +198,8 @@ Description: nginx web/proxy server (basic version)
  FastCGI, Map, Proxy, Rewrite.
  .
  OPTIONAL HTTP MODULES: Auth Request, Charset, Gzip, Gzip Precompression,
- Headers, Index, Log, Real IP, SSL, Stub Status, Upstream.
+ Headers, HTTP/2, Index, Log, Real IP, SSI, SSL, Stub Status, Thread Pool,
+ WebDAV, Upstream.
  .
  THIRD PARTY MODULES: Echo.
 
@@ -211,11 +222,16 @@ Package: nginx-extras
 Architecture: any
 Priority: extra
 Depends: nginx-common (= ${source:Version}),
+         libnginx-mod-http-geoip (= ${binary:Version}),
+         libnginx-mod-http-image-filter (= ${binary:Version}),
+         libnginx-mod-http-xslt-filter (= ${binary:Version}),
+         libnginx-mod-mail (= ${binary:Version}),
+         libnginx-mod-stream (= ${binary:Version}),
+         libnginx-mod-http-auth-pam (= ${binary:Version}),
+         libnginx-mod-http-lua (= ${binary:Version}),
+         libnginx-mod-http-perl (= ${binary:Version}),
          ${misc:Depends},
-         ${perl:Depends},
-         ${shlibs:Depends},
-	 libhiredis
-Build-Depends: libhiredis-dev
+         ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
 Provides: httpd, httpd-cgi, nginx
 Conflicts: nginx-full, nginx-light, nginx-core
