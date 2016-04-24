@@ -129,12 +129,6 @@ Description: nginx web/proxy server (core version) - debugging symbols
 Package: nginx-full
 Architecture: any
 Depends: nginx-common (= ${source:Version}),
-         libnginx-mod-http-geoip (= ${binary:Version}),
-         libnginx-mod-http-image-filter (= ${binary:Version}),
-         libnginx-mod-http-xslt-filter (= ${binary:Version}),
-         libnginx-mod-mail (= ${binary:Version}),
-         libnginx-mod-stream (= ${binary:Version}),
-         libnginx-mod-http-auth-pam (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
@@ -222,14 +216,6 @@ Package: nginx-extras
 Architecture: any
 Priority: extra
 Depends: nginx-common (= ${source:Version}),
-         libnginx-mod-http-geoip (= ${binary:Version}),
-         libnginx-mod-http-image-filter (= ${binary:Version}),
-         libnginx-mod-http-xslt-filter (= ${binary:Version}),
-         libnginx-mod-mail (= ${binary:Version}),
-         libnginx-mod-stream (= ${binary:Version}),
-         libnginx-mod-http-auth-pam (= ${binary:Version}),
-         libnginx-mod-http-lua (= ${binary:Version}),
-         libnginx-mod-http-perl (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
