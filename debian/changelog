@@ -1,12 +1,34 @@
-nginx (1.9.11-1) UNRELEASED; urgency=medium
+nginx (1.9.14-1) unstable; urgency=medium
 
   [ Christos Trochalakis ]
-  * New upstream release (1.9.11) (Closes: #812806)
+  * New upstream release (1.9.14) (Closes: #812806)
+  * debian:
+    + Setup dynamic module flow, and implement a simple dh_nginx helper for
+      internal use.
+    + Split modules in libnginx-mod-* packages.
+      Not all modules are ready for dynamic building.
+  * debian/control:
+    + Enable http/2, thread pool & WebDAV on nginx-light.
+      In order for dynamic modules to be loadable in all nginx flavors we need
+      to ensure they share the same build signature. (Closes: #816095)
+    + nginx-common & nginx-doc are now 'Multi-Arch: foreign'. (Closes: #812484)
+      Thanks Elrond for the report and the initial patch.
+    + Use secure VCS uri (lintian).
+    + Bump Standards to 3.9.7.
+  * debian/rules:
+    + Disable PIE for now so we can build dynamic modules.
+  * debian/tests/control:
+    + Test if modules are loadable in nginx-light.
+  * debian/nginx-common.nginx.service:
+    + Documentation points to nginx man page.
   * debian/modules/nginx-lua:
-    + Update nginx-lua to v0.10.1rc0-5-g01727a3.
+    + Update nginx-lua to v0.12 and convert it to a dyn module.
       Fixes buiding failures with nginx 1.9.11.
+  * debian/modules/nginx-auth-pam:
+    + Update http-auth-pam module to 1.5 and convert it to a dyn module.
+      (Closes: #819062)
 
- -- Christos Trochalakis <yatiohi@ideopolis.gr>  Thu, 11 Feb 2016 15:06:38 +0200
+ -- Christos Trochalakis <yatiohi@ideopolis.gr>  Tue, 19 Apr 2016 11:05:35 +0300
 
 nginx (1.9.10-1) unstable; urgency=medium
 

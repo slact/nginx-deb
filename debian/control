@@ -24,7 +24,7 @@ Build-Depends: autotools-dev,
                libxslt1-dev,
                po-debconf,
                zlib1g-dev
-Standards-Version: 3.9.6.0
+Standards-Version: 3.9.7.0
 Homepage: http://nginx.net
 Vcs-Git: https://anonscm.debian.org/cgit/collab-maint/nginx.git
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nginx.git
@@ -48,6 +48,7 @@ Description: small, powerful, scalable web/proxy server
 
 Package: nginx-doc
 Architecture: all
+Multi-Arch: foreign
 Section: doc
 Depends: lsb-base (>= 3.2-14), ${misc:Depends}
 Description: small, powerful, scalable web/proxy server - documentation
@@ -59,6 +60,7 @@ Description: small, powerful, scalable web/proxy server - documentation
 
 Package: nginx-common
 Architecture: all
+Multi-Arch: foreign
 Depends: lsb-base (>= 3.2-14), ${misc:Depends}
 Replaces: nginx (<< 0.8.54-4),
           nginx-extras (<< 0.8.54-4),
@@ -79,7 +81,15 @@ Description: small, powerful, scalable web/proxy server - common files
 
 Package: nginx-full
 Architecture: any
-Depends: nginx-common (= ${source:Version}), ${misc:Depends}, ${shlibs:Depends}
+Depends: nginx-common (= ${source:Version}),
+         libnginx-mod-http-geoip (= ${binary:Version}),
+         libnginx-mod-http-image-filter (= ${binary:Version}),
+         libnginx-mod-http-xslt-filter (= ${binary:Version}),
+         libnginx-mod-mail (= ${binary:Version}),
+         libnginx-mod-stream (= ${binary:Version}),
+         libnginx-mod-http-auth-pam (= ${binary:Version}),
+         ${misc:Depends},
+         ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
 Provides: httpd, httpd-cgi, nginx
 Conflicts: nginx-extras, nginx-light
@@ -141,7 +151,8 @@ Description: nginx web/proxy server (basic version)
  FastCGI, Map, Proxy, Rewrite.
  .
  OPTIONAL HTTP MODULES: Auth Request, Charset, Gzip, Gzip Precompression,
- Headers, Index, Log, Real IP, SSL, Stub Status, Upstream.
+ Headers, HTTP/2, Index, Log, Real IP, SSI, SSL, Stub Status, Thread Pool,
+ WebDAV, Upstream.
  .
  THIRD PARTY MODULES: Echo.
 
@@ -164,8 +175,15 @@ Package: nginx-extras
 Architecture: any
 Priority: extra
 Depends: nginx-common (= ${source:Version}),
+         libnginx-mod-http-geoip (= ${binary:Version}),
+         libnginx-mod-http-image-filter (= ${binary:Version}),
+         libnginx-mod-http-xslt-filter (= ${binary:Version}),
+         libnginx-mod-mail (= ${binary:Version}),
+         libnginx-mod-stream (= ${binary:Version}),
+         libnginx-mod-http-auth-pam (= ${binary:Version}),
+         libnginx-mod-http-lua (= ${binary:Version}),
+         libnginx-mod-http-perl (= ${binary:Version}),
          ${misc:Depends},
-         ${perl:Depends},
          ${shlibs:Depends},
 	 libhiredis
 Build-Depends: libhiredis-dev
@@ -211,3 +229,97 @@ Description: nginx web/proxy server (extended version) - debugging symbols
  This package provides debugging symbols for nginx-extras, to assist in
  debugging issues that you may find. It should not be required for normal
  operation.
+
+Package: libnginx-mod-http-geoip
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: GeoIP HTTP module for Nginx
+ The ngx_http_geoip module creates variables with values depending on the
+ client IP address, using the precompiled MaxMind databases.
+ .
+ Those variables include country, region, city, latitude, longitude, postal
+ code, etc.
+
+Package: libnginx-mod-http-image-filter
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: HTTP image filter module for Nginx
+ The ngx_http_image_filter module is a filter that transforms images in JPEG,
+ GIF, and PNG formats.
+ .
+ The module supports filters such as rotate, resize, crop, quality, sharpening,
+ interlacing and more.
+
+Package: libnginx-mod-http-xslt-filter
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: XSLT Transformation module for Nginx
+ The ngx_http_xslt_filter module is a filter that transforms XML responses
+ using one or more XSLT stylesheets.
+ .
+ The transformation can be adjusted by setting the relevant configuration
+ parameters.
+
+Package: libnginx-mod-mail
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Mail module for Nginx
+ The nginx_mail module adds mail proxy support to nginx.
+ .
+ The module supports proxying all the standard mail protocols such as IMAP,
+ POP3 & SMTP.
+
+Package: libnginx-mod-stream
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Stream module for Nginx
+ The nginx_stream module adds stream proxy support to nginx.
+ .
+ Stream module supports loadbalancing & proxying to TCP servers. The module
+ also supports ACLs/connection limiting and configuring multiple operational
+ parameters.
+
+Package: libnginx-mod-http-perl
+Architecture: any
+Depends: ${perl:Depends}, ${misc:Depends}, ${shlibs:Depends}
+Description: Perl module for Nginx
+ Embed Perl runtime into nginx.
+ .
+ The ngx_http_perl module is used to implement location and variable handlers
+ in Perl and insert Perl calls into SSI.
+ .
+ Note that this module is marked experimental.
+
+Package: libnginx-mod-http-auth-pam
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: PAM authentication module for Nginx
+ The nginx_http_auth_pam module enables authentication using PAM.
+ .
+ The module uses PAM as a backend for simple http authentication. It
+ also allows setting the pam service name to allow more fine grained control.
+
+Package: libnginx-mod-http-lua
+Architecture: any
+Depends: libnginx-mod-http-ndk (= ${binary:Version}), ${misc:Depends}, ${shlibs:Depends}
+Description: LUA module for Nginx
+ Embed LUA runtime into nginx.
+ .
+ This module embeds Lua, via the standard Lua 5.1 interpreter or LuaJIT
+ 2.0/2.1, into Nginx and by leveraging Nginx's subrequests, allows the
+ integration of the powerful Lua threads (Lua coroutines) into the Nginx event
+ model.
+
+Package: libnginx-mod-http-ndk
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Nginx Development Kit module
+ The NDK is an Nginx module that is designed to extend the core functionality of
+ the excellent Nginx webserver in a way that can be used as a basis of other
+ Nginx modules.
+ .
+ It has functions and macros to deal with generic tasks that don't currently
+ have generic code as part of the core distribution. The NDK itself adds few
+ features that are seen from a user's point of view - it's just designed to help
+ reduce the code that Nginx module developers need to write.  Embed LUA runtime
+ into nginx.
