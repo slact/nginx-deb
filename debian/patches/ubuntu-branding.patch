@@ -13,7 +13,7 @@ index e416e90..9151ac2 100644
 +++ b/src/core/nginx.h
 @@ -11,8 +11,7 @@
  
- #define nginx_version      1009011
+ #define nginx_version      1009014
  #define NGINX_VERSION      "1.9.14"
 -#define NGINX_VER          "nginx/" NGINX_VERSION
 +#define NGINX_VER          "nginx/" NGINX_VERSION "Ubuntu"
