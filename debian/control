@@ -260,5 +260,3 @@ Description: nginx web/proxy server (extended version) - debugging symbols
  This package provides debugging symbols for nginx-extras, to assist in
  debugging issues that you may find. It should not be required for normal
  operation.
-
-Replaces: nginx-extras (<< 1.9.14-1)
