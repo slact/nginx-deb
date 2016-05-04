@@ -25,7 +25,7 @@ Build-Depends: autotools-dev,
                libxslt1-dev,
                po-debconf,
                zlib1g-dev
-Standards-Version: 3.9.7.0
+Standards-Version: 3.9.8.0
 Homepage: http://nginx.net
 Vcs-Git: https://anonscm.debian.org/cgit/collab-maint/nginx.git
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/nginx.git
@@ -260,3 +260,5 @@ Description: nginx web/proxy server (extended version) - debugging symbols
  This package provides debugging symbols for nginx-extras, to assist in
  debugging issues that you may find. It should not be required for normal
  operation.
+
+Replaces: nginx-extras (<< 1.9.14-1)
