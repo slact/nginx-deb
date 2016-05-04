@@ -1,3 +1,21 @@
+nginx (1.10.0-1) unstable; urgency=medium
+
+  [ Christos Trochalakis ]
+  * New upstream release (1.10.0)
+
+ -- Christos Trochalakis <yatiohi@ideopolis.gr>  Fri, 29 Apr 2016 10:31:46 +0300
+
+nginx (1.9.14-2) unstable; urgency=medium
+
+  [ Christos Trochalakis ]
+  * debian/control:
+    + Fix upgrading nginx-extras from testing. (Closes: #822553)
+    + Bump Standards to 3.9.8, no changes needed.
+  * debian/libnginx-mod-http-perl.lintian-overrides:
+    + Override wrong-section-according-to-package-name warning.
+
+ -- Christos Trochalakis <yatiohi@ideopolis.gr>  Wed, 27 Apr 2016 16:43:02 +0300
+
 nginx (1.9.14-1) unstable; urgency=medium
 
   [ Christos Trochalakis ]
