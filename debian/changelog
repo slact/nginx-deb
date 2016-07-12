@@ -1,4 +1,4 @@
-nginx (1.10.1-1ubuntu1) unstable; urgency=medium
+nginx (1.10.1-2ubuntu1) unstable; urgency=medium
 
   [ Christos Trochalakis ]
   * New upstream release (1.10.1)
