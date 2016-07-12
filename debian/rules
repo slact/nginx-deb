@@ -7,8 +7,8 @@ debian_ldflags:=$(shell dpkg-buildflags --get LDFLAGS)
 
 # export necessary perl hardenging flags
 # see: src/http/modules/perl/Makefile.PL
-DEBIAN_NGINX_PERL_LDFLAGS:= $(shell DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie dpkg-buildflags --get LDFLAGS)
-export DEBIAN_NGINX_PERL_LDFLAGS
+#DEBIAN_NGINX_PERL_LDFLAGS:= $(shell DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie dpkg-buildflags --get LDFLAGS)
+#export DEBIAN_NGINX_PERL_LDFLAGS
 
 FLAVOURS := core full light extras
 DYN_MODS := 
@@ -97,7 +97,6 @@ extras_configure_flags := \
 			--with-http_gzip_static_module \
 			--with-http_image_filter_module \
 			--with-http_mp4_module \
-			--with-http_perl_module \
 			--with-http_random_index_module \
 			--with-http_secure_link_module \
 			--with-http_sub_module \
@@ -118,7 +117,7 @@ extras_configure_flags := \
 			--add-module=$(MODULESDIR)/nginx-upload-progress \
 			--add-module=$(MODULESDIR)/nginx-upstream-fair \
 			--add-module=$(MODULESDIR)/ngx_http_substitutions_filter_module
-
+#			--with-http_perl_module
 %:
 	dh $@ --with systemd
 
