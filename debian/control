@@ -184,6 +184,7 @@ Depends: nginx-common (= ${source:Version}),
          libnginx-mod-http-auth-pam (= ${binary:Version}),
          libnginx-mod-http-lua (= ${binary:Version}),
          libnginx-mod-http-perl (= ${binary:Version}),
+         libnginx-mod-nchan (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
@@ -309,6 +310,22 @@ Description: LUA module for Nginx
  2.0/2.1, into Nginx and by leveraging Nginx's subrequests, allows the
  integration of the powerful Lua threads (Lua coroutines) into the Nginx event
  model.
+
+Package: libnginx-mod-nchan
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, libhiredis
+Build-Depends: libhiredis-dev
+Description: Fast, flexible pub/sub server
+ Fast, flexible pub/sub server.
+ .
+ Nchan is a scalable, flexible pub/sub server for the modern web, It can be
+ configured as a standalone server, or as a shim between your application and tens,
+ thousands, or millions of live subscribers. It can buffer messages in memory,
+ on-disk, or via Redis. All connections are handled asynchronously and distributed
+ among any number of worker processes. It can also scale to many nginx server
+ instances with Redis.
+ Full documentation available at https://nchan.slact.net
+
 
 Package: libnginx-mod-http-ndk
 Architecture: any
