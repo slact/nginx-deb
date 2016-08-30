@@ -112,9 +112,8 @@ Modules are handled specially and are determined by the B<mod> type. Modules mus
 have a I<.conf> suffix. In that case the file is interpreted as module load
 file and is installed to I</etc/nginx/modules-available>. If the file is ending
 with a I<.so> suffix it is interpreted as actual module shared object and is
-installed to the Nginx module directory. Moreover, if a I<.load> file is
-installed the configuration is activated in the maintainer script at
-installation time.
+installed to the Nginx module directory, an optional numeric priority can be
+set as the last argument to handle module dependencies.
 
 =head1 OPTIONS
 
@@ -169,7 +168,8 @@ foreach my $package ((@{$dh{DOPACKAGES}}))
 	{
 		my $type = lc(shift @{$line}) if $line->[0];
 		my $source = shift @{$line} if $line->[0];
-		my @arguments = map {"$_ "} @{$line};
+		my @arguments = @{$line};
+		my $destination;
 
 		$type = "modules" if $type eq "mod";
 		my $installdir = $tmp . "/" . nginx_modules_conf_installdir();
@@ -185,8 +185,10 @@ foreach my $package ((@{$dh{DOPACKAGES}}))
 				if ($basesource =~ m/\.conf$/)
 				{
 					my $enablename = $basesource;
-					push @{$PACKAGE_TYPE{'has_a_module'}}, $enablename;
-					verbose_print("Installing module configuration $enablename into $installdir\n");
+					my $prio = $#arguments >= 0 ? $arguments[0] : 50;
+					$destination = "$prio-$basesource";
+					push @{$PACKAGE_TYPE{'has_a_module'}}, "$enablename:$destination";
+					verbose_print("Installing module configuration $enablename into $installdir prio:$prio\n");
 				}
 				elsif ($basesource =~ m/\.so$/)
 			{
@@ -202,7 +204,7 @@ foreach my $package ((@{$dh{DOPACKAGES}}))
 				}
 
 				# TODO
-				error("module: \"$basesource\" needs .conf, .so or .load suffix") if $basesource !~ m/\.(conf|so)/;
+				error("module: \"$basesource\" needs .conf, .so or suffix") if $basesource !~ m/\.(conf|so)/;
 			}
 
 			if (! -d $installdir)

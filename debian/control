@@ -300,7 +300,7 @@ Description: PAM authentication module for Nginx
 
 Package: libnginx-mod-http-lua
 Architecture: any
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: libnginx-mod-http-ndk (= ${binary:Version}), ${misc:Depends}, ${shlibs:Depends}
 Description: LUA module for Nginx
  Embed LUA runtime into nginx.
  .
@@ -325,3 +325,16 @@ Description: Fast, flexible pub/sub server
  Full documentation available at https://nchan.slact.net
 
 
+Package: libnginx-mod-http-ndk
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Nginx Development Kit module
+ The NDK is an Nginx module that is designed to extend the core functionality of
+ the excellent Nginx webserver in a way that can be used as a basis of other
+ Nginx modules.
+ .
+ It has functions and macros to deal with generic tasks that don't currently
+ have generic code as part of the core distribution. The NDK itself adds few
+ features that are seen from a user's point of view - it's just designed to help
+ reduce the code that Nginx module developers need to write.  Embed LUA runtime
+ into nginx.
