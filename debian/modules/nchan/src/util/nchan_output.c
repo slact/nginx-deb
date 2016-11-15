@@ -15,11 +15,6 @@
 #define REQUEST_PCALLOC(r, what) what = ngx_pcalloc((r)->pool, sizeof(*(what)))
 #define REQUEST_PALLOC(r, what) what = ngx_palloc((r)->pool, sizeof(*(what)))
 
-#define container_of(ptr, type, member) ({                      \
-        const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
-        (type *)( (char *)__mptr - offsetof(type,member) );})
-
-
 //file descriptor cache
 static void *fd_cache = NULL;
 
@@ -587,8 +582,14 @@ ngx_table_elt_t * nchan_add_response_header(ngx_http_request_t *r, const ngx_str
   h->hash = 1;
   h->key.len = header_name->len;
   h->key.data = header_name->data;
-  h->value.len = header_value->len;
-  h->value.data = header_value->data;
+  if(header_value) {
+    h->value.len = header_value->len;
+    h->value.data = header_value->data;
+  }
+  else {
+    h->value.len = 0;
+    h->value.data = NULL;
+  }
   return h;
 }
 
@@ -643,14 +644,14 @@ ngx_chain_t * nchan_create_output_chain(ngx_buf_t *buf, ngx_pool_t *pool, ngx_lo
   ngx_pool_cleanup_t             *cln = NULL;
   ngx_pool_cleanup_file_t        *clnf = NULL;
   if((out = ngx_pcalloc(pool, sizeof(*out)))==NULL) {
-    ngx_log_error(NGX_LOG_ERR, log, 0, "nchan: can't create output chain, can't allocate chain  in pool");
+    nchan_log(NGX_LOG_ERR, log, "can't create output chain, can't allocate chain  in pool");
     return NULL;
   }
   ngx_buf_t                      *buf_copy;
   
   if((buf_copy = ngx_pcalloc(pool, NGX_HTTP_BUF_ALLOC_SIZE(buf)))==NULL) {
     //TODO: don't zero the whole thing!
-    ngx_log_error(NGX_LOG_ERR, log, 0, "nchan: can't create output chain, can't allocate buffer copy in pool");
+    nchan_log(NGX_LOG_ERR, log, "can't create output chain, can't allocate buffer copy in pool");
     return NULL;
   }
   nchan_copy_preallocated_buffer(buf, buf_copy);
@@ -666,11 +667,11 @@ ngx_chain_t * nchan_create_output_chain(ngx_buf_t *buf, ngx_pool_t *pool, ngx_lo
       file = buf_copy->file;
       file->log=log;
       if(file->fd==NGX_INVALID_FILE) {
-        //ngx_log_error(NGX_LOG_ERR, log, 0, "opening invalid file at %s", file->name.data);
+        //nchan_log(NGX_LOG_ERR, log, "opening invalid file at %s", file->name.data);
         file->fd=ngx_open_file(file->name.data, NGX_FILE_RDONLY, NGX_FILE_OPEN, NGX_FILE_OWNER_ACCESS);
       }
       if(file->fd==NGX_INVALID_FILE) {
-        ngx_log_error(NGX_LOG_ERR, log, 0, "nchan: can't create output chain, file in buffer is invalid");
+        nchan_log(NGX_LOG_ERR, log, "can't create output chain, file in buffer is invalid");
         return NULL;
       }
       else {
@@ -678,7 +679,7 @@ ngx_chain_t * nchan_create_output_chain(ngx_buf_t *buf, ngx_pool_t *pool, ngx_lo
         if((cln = ngx_pool_cleanup_add(pool, sizeof(*clnf))) == NULL) {
           ngx_close_file(file->fd);
           file->fd=NGX_INVALID_FILE;
-          ngx_log_error(NGX_LOG_ERR, log, 0, "nchan: can't create output chain file cleanup.");
+          nchan_log(NGX_LOG_ERR, log, "can't create output chain file cleanup.");
           return NULL;
         }
         cln->handler = ngx_pool_cleanup_file;

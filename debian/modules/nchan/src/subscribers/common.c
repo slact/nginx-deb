@@ -23,7 +23,6 @@ typedef struct {
 } nchan_auth_subrequest_stuff_t;
 
 static void subscriber_authorize_timer_callback_handler(ngx_event_t *ev) {
-  
   nchan_auth_subrequest_data_t *d = ev->data;
   
   d->sub->fn->release(d->sub, 1);
@@ -46,20 +45,25 @@ static void subscriber_authorize_timer_callback_handler(ngx_event_t *ev) {
 
 static ngx_int_t subscriber_authorize_callback(ngx_http_request_t *r, void *data, ngx_int_t rc) {
   nchan_auth_subrequest_data_t  *d = data;
-  ngx_event_t                   *timer = ngx_pcalloc(r->pool, sizeof(*timer));
+  ngx_event_t                   *timer;
   
-  if(timer == NULL) {
-    return NGX_ERROR;
+  if (rc == NGX_HTTP_CLIENT_CLOSED_REQUEST) {
+    d->sub->fn->release(d->sub, 1);
+    //subscriber will be cleaned up and destroyed because this happens before the 
+    //subscriber's sudden_abort_handler is called
   }
-  
-  d->rc = rc;
-  d->http_response_code = r->headers_out.status;
-  
-  timer->handler = subscriber_authorize_timer_callback_handler;
-  timer->log = d->sub->request->connection->log;
-  timer->data = data;
-  
-  ngx_add_timer(timer, 0); //not sure if this needs to be done like this, but i'm just playing it safe here.
+  else {
+    d->rc = rc;
+    d->http_response_code = r->headers_out.status;
+    if((timer = ngx_pcalloc(r->pool, sizeof(*timer))) == NULL) {
+      return NGX_ERROR;
+    }
+    timer->handler = subscriber_authorize_timer_callback_handler;
+    timer->log = d->sub->request->connection->log;
+    timer->data = data;
+    
+    ngx_add_timer(timer, 0); //not sure if this needs to be done like this, but i'm just playing it safe here.
+  }
   
   return NGX_OK;
 }
@@ -100,6 +104,8 @@ ngx_int_t nchan_subscriber_authorize_subscribe(subscriber_t *sub, ngx_str_t *ch_
     }
     
     sr->header_only = 1;
+    
+    sr->args = sub->request->args;
     
     return NGX_OK;
   }
@@ -207,13 +213,9 @@ void nchan_subscriber_timeout_ev_handler(ngx_event_t *ev) {
 
 void nchan_subscriber_init_timeout_timer(subscriber_t *sub, ngx_event_t *ev) {
   ngx_memzero(ev, sizeof(*ev));
-  #if nginx_version >= 1008000
-  ev->cancelable = 1;
-#endif
-  ev->handler = nchan_subscriber_timeout_ev_handler;
-  ev->data = sub;
-  ev->log = ngx_cycle->log; 
+  nchan_init_timer(ev, nchan_subscriber_timeout_ev_handler, sub);
 }
+
 void nchan_subscriber_init(subscriber_t *sub, const subscriber_t *tmpl, ngx_http_request_t *r, nchan_msg_id_t *msgid) {
   nchan_request_ctx_t  *ctx = NULL;
   *sub = *tmpl;
@@ -258,3 +260,58 @@ void nchan_subscriber_common_setup(subscriber_t *sub, subscriber_type_t type, ng
     ctx->subscriber_type = sub->name;
   }
 }
+
+ngx_int_t nchan_subscriber_empty_notify(subscriber_t *self, ngx_int_t code, void *data) {
+  return NGX_OK;
+}
+
+
+#define MSGID_BUF_LEN (10*255)
+typedef struct msgidbuf_s msgidbuf_t;
+struct msgidbuf_s {
+  u_char       chr[MSGID_BUF_LEN];
+  msgidbuf_t  *prev;
+  msgidbuf_t  *next;
+};
+
+static void *msgidbuf_alloc(void *pd) {
+  return ngx_palloc((ngx_pool_t *)pd, sizeof(msgidbuf_t));
+}
+
+ngx_int_t nchan_subscriber_init_msgid_reusepool(nchan_request_ctx_t *ctx, ngx_pool_t *request_pool) {
+  ctx->output_str_queue = ngx_palloc(request_pool, sizeof(*ctx->output_str_queue));
+  nchan_reuse_queue_init(ctx->output_str_queue, offsetof(msgidbuf_t, prev), offsetof(msgidbuf_t, next), msgidbuf_alloc, NULL, request_pool);
+  return NGX_OK;
+}
+
+ngx_str_t nchan_subscriber_set_recyclable_msgid_str(nchan_request_ctx_t *ctx, nchan_msg_id_t *msgid) {
+  ngx_str_t               ret;
+  msgidbuf_t             *msgidbuf;
+  
+  msgidbuf = nchan_reuse_queue_push(ctx->output_str_queue);
+  ret.data = &msgidbuf->chr[0];
+  
+  nchan_strcpy(&ret, msgid_to_str(msgid), MSGID_BUF_LEN);
+  
+  return ret;
+}
+
+void ngx_init_set_membuf(ngx_buf_t *buf, u_char *start, u_char *end) {
+  ngx_memzero(buf, sizeof(*buf));
+  buf->start = start;
+  buf->pos = start;
+  buf->end = end;
+  buf->last = end;
+  buf->memory = 1;
+}
+
+void ngx_init_set_membuf_str(ngx_buf_t *buf, ngx_str_t *str) {
+  ngx_memzero(buf, sizeof(*buf));
+  buf->start = str->data;
+  buf->pos = str->data;
+  buf->end = str->data + str->len;
+  buf->last = buf->end;
+  buf->memory = 1;
+}
+
+

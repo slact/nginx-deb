@@ -15,7 +15,8 @@ Build-Depends: autotools-dev,
                libexpat-dev,
                libgd-dev,
                libgeoip-dev,
-               libluajit-5.1-dev [i386 amd64 kfreebsd-i386 armel armhf powerpc powerpcspe mips mipsel] | liblua5.1-0-dev,
+               libluajit-5.1-dev [i386 amd64 kfreebsd-i386 armel armhf powerpc powerpcspe mips mipsel],
+               liblua5.1-0-dev [!i386 !amd64 !kfreebsd-i386 !armel !armhf !powerpc !powerpcspe !mips !mipsel],
                libmhash-dev,
                libpam0g-dev,
                libpcre3-dev,
@@ -103,8 +104,8 @@ Description: nginx web/proxy server (standard version)
  .
  OPTIONAL HTTP MODULES: Addition, Auth Request, Charset, WebDAV, GeoIP, Gunzip,
  Gzip, Gzip Precompression, Headers, HTTP/2, Image Filter, Index, Log, Real IP,
- SSI, SSL, Stream, Stub Status, Substitution, Thread Pool, Upstream, User ID,
- XSLT.
+ Slice, SSI, SSL, Stream, Stub Status, Substitution, Thread Pool, Upstream,
+ User ID, XSLT.
  .
  MAIL MODULES: Mail Core, Auth HTTP, Proxy, SSL, IMAP, POP3, SMTP.
  .
@@ -145,8 +146,8 @@ Description: nginx web/proxy server (basic version)
  FastCGI, Map, Proxy, Rewrite.
  .
  OPTIONAL HTTP MODULES: Auth Request, Charset, Gzip, Gzip Precompression,
- Headers, HTTP/2, Index, Log, Real IP, SSI, SSL, Stub Status, Thread Pool,
- WebDAV, Upstream.
+ Headers, HTTP/2, Index, Log, Real IP, Slice, SSI, SSL, Stub Status, Thread
+ Pool, WebDAV, Upstream.
  .
  THIRD PARTY MODULES: Echo.
 
@@ -169,6 +170,7 @@ Package: nginx-extras
 Architecture: any
 Priority: extra
 Depends: nginx-common (= ${source:Version}),
+         libnginx-mod-nchan (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: nginx (<< 1.4.5-1)
@@ -190,8 +192,8 @@ Description: nginx web/proxy server (extended version)
  .
  OPTIONAL HTTP MODULES: Addition, Auth Request, Charset, WebDAV, FLV, GeoIP,
  Gunzip, Gzip, Gzip Precompression, Headers, HTTP/2, Image Filter, Index, Log,
- MP4, Embedded Perl, Random Index, Real IP, Secure Link, SSI, SSL, Stream,
- Stub Status, Substitution, Thread Pool, Upstream, User ID, XSLT.
+ MP4, Embedded Perl, Random Index, Real IP, Slice, Secure Link, SSI, SSL,
+ Stream, Stub Status, Substitution, Thread Pool, Upstream, User ID, XSLT.
  .
  MAIL MODULES: Mail Core, Auth HTTP, Proxy, SSL, IMAP, POP3, SMTP.
  .
@@ -213,3 +215,19 @@ Description: nginx web/proxy server (extended version) - debugging symbols
  This package provides debugging symbols for nginx-extras, to assist in
  debugging issues that you may find. It should not be required for normal
  operation.
+
+
+Package: libnginx-mod-nchan
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, libhiredis
+Build-Depends: libhiredis-dev
+Description: Fast, flexible pub/sub server
+ Fast, flexible pub/sub server.
+ .
+ Nchan is a scalable, flexible pub/sub server for the modern web, It can be
+ configured as a standalone server, or as a shim between your application and tens,
+ thousands, or millions of live subscribers. It can buffer messages in memory,
+ on-disk, or via Redis. All connections are handled asynchronously and distributed
+ among any number of worker processes. It can also scale to many nginx server
+ instances with Redis.
+ Full documentation available at https://nchan.slact.net

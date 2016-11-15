@@ -222,7 +222,7 @@ class Subscriber
         when /^(ws|http|h2c)$/
           @sock = Celluloid::IO::TCPSocket.new(uri.host, uri.port)
         when /^(wss|https|h2)$/
-          @sock = Celluloid::IO::SSLSocket.new(uri.host, uri.port)
+          @sock = Celluloid::IO::SSLSocket.new(Celluloid::IO::TCPSocket.new(uri.host, uri.port))
         else
           raise ArgumentError, "unexpected uri scheme #{uri.scheme}"
         end
@@ -403,12 +403,7 @@ class Subscriber
         #handshake response
         loop do
           @handshake << sock.readline
-          if @handshake.finished?
-            unless @handshake.valid?
-              @subscriber.on_failure error(@handshake.response_code, @handshake.response_line)
-            end
-            break
-          end
+          break if @handshake.finished?
         end
         
         if @handshake.valid?
@@ -417,6 +412,9 @@ class Subscriber
           async.listen bundle
           @notready-=1
           @cooked_ready.signal true if @notready == 0
+        else
+          @subscriber.on_failure error(@handshake.response_code, @handshake.response_line)
+          close nil
         end
       end
     end
@@ -964,6 +962,10 @@ class Subscriber
         if code != 200
           @subscriber.on_failure error(code, "")
           close b
+          b.on_response do |code, headers, body|
+            @subscriber.finished+=1
+            close b
+          end
         else
           @notready-=1
           @cooked_ready.signal true if @notready == 0
@@ -988,7 +990,7 @@ class Subscriber
         if !b.subparser.buf_empty?
           b.subparser.parse_line "\n"
         else
-          @subscriber.on_failure error(0, "Response completed unexpectedly", bundle)
+          @subscriber.on_failure error(0, "Response completed unexpectedly", b)
         end
         @subscriber.finished+=1
         close b
@@ -1348,7 +1350,7 @@ end
 
 class Publisher
   #include Celluloid
-  attr_accessor :messages, :response, :response_code, :response_body, :nofail, :accept, :url, :extra_headers
+  attr_accessor :messages, :response, :response_code, :response_body, :nofail, :accept, :url, :extra_headers, :verbose
   def initialize(url, opt={})
     @url= url
     unless opt[:nostore]
@@ -1357,6 +1359,8 @@ class Publisher
     end
     @timeout = opt[:timeout]
     @accept = opt[:accept]
+    @verbose = opt[:verbose]
+    @on_response = opt[:on_response]
   end
   
   def with_url(alt_url)
@@ -1368,6 +1372,11 @@ class Publisher
     else
       self
     end
+  end
+  
+  def on_response(&block)
+    @on_response = block if block_given?
+    @on_response
   end
   
   def on_complete(&block)
@@ -1393,7 +1402,8 @@ class Publisher
       method: method,
       body: body,
       timeout: @timeout || PUBLISH_TIMEOUT,
-      connecttimeout: @timeout || PUBLISH_TIMEOUT
+      connecttimeout: @timeout || PUBLISH_TIMEOUT,
+      verbose: @verbose
     )
     if @messages
       msg=Message.new body
@@ -1431,7 +1441,8 @@ class Publisher
             raise errmsg
           end
         end
-        block.call(self) if block
+        block.call(self.response_code, self.response_body) if block
+        on_response.call(self.response_code, self.response_body) if on_response
       end
     end
     #puts "publishing to #{@url}"
