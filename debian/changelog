@@ -1,3 +1,9 @@
+nginx (1.13.3-1~bpo9+1) stretch-backports; urgency=high
+
+  * Rebuild for stretch-backports.
+
+ -- Christos Trochalakis <ctrochalakis@debian.org>  Sun, 16 Jul 2017 11:21:12 +0300
+
 nginx (1.13.3-1) unstable; urgency=high
 
   * New upstream version 1.13.3.
