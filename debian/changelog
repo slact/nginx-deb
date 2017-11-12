@@ -1,3 +1,6 @@
+nginx (1.13.6-3) unstable; urgency=low
+  * mod: Upgrade nchan to 1.1.19.
+
 nginx (1.13.6-2) unstable; urgency=medium
 
   * rtmp: Ship docs & examples (Closes: #878368)

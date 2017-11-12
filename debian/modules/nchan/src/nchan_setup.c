@@ -4,16 +4,25 @@
 #include <nchan_variables.h>
 #include <store/memory/store.h>
 #include <store/redis/store.h>
+#if (NGX_ZLIB)
+#include <zlib.h>
+#endif
 
 static ngx_str_t      DEFAULT_CHANNEL_EVENT_STRING = ngx_string("$nchan_channel_event $nchan_channel_id");
 
 nchan_store_t   *default_storage_engine = &nchan_store_memory;
 ngx_flag_t       global_redis_enabled = 0;
+ngx_flag_t       global_zstream_needed = 0;
+
+#define MERGE_UNSET_CONF(conf, prev, unset, default)         \
+if (conf == unset) {                                         \
+  conf = (prev == unset) ? default : prev;                   \
+}
 
 #define MERGE_CONF(cf, prev_cf, name) if((cf)->name == NULL) { (cf)->name = (prev_cf)->name; }
 
 static ngx_int_t nchan_init_module(ngx_cycle_t *cycle) {
-  ngx_core_conf_t                *ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+  ngx_core_conf_t         *ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
   nchan_worker_processes = ccf->worker_processes;
   
   //initialize storage engines
@@ -51,6 +60,14 @@ static ngx_int_t nchan_postconfig(ngx_conf_t *cf) {
   if(global_redis_enabled && nchan_store_redis.init_postconfig(cf)!=NGX_OK) {
     return NGX_ERROR;
   }
+  
+#if (NGX_ZLIB)
+  if(global_zstream_needed) {
+    nchan_main_conf_t  *mcf = ngx_http_conf_get_module_main_conf(cf, ngx_nchan_module);
+    nchan_common_deflate_init(mcf);
+  }
+#endif
+  
   return NGX_OK;
 }
 
@@ -60,8 +77,19 @@ static void * nchan_create_main_conf(ngx_conf_t *cf) {
   if(mcf == NULL) {
     return NGX_CONF_ERROR;
   }
+  
+  static ngx_path_init_t nchan_temp_path = { ngx_string(NGX_HTTP_CLIENT_TEMP_PATH), { 0, 0, 0 } };
+  ngx_conf_merge_path_value(cf, &mcf->message_temp_path, NULL, &nchan_temp_path);
+  
   nchan_store_memory.create_main_conf(cf, mcf);
   nchan_store_redis.create_main_conf(cf, mcf);
+  
+#if (NGX_ZLIB)
+  mcf->zlib_params.level = Z_DEFAULT_COMPRESSION;
+  mcf->zlib_params.windowBits = -10;
+  mcf->zlib_params.memLevel = 8;
+  mcf->zlib_params.strategy = Z_DEFAULT_STRATEGY;
+#endif
   
   return mcf;
 }
@@ -82,12 +110,16 @@ static void *nchan_create_loc_conf(ngx_conf_t *cf) {
   lcf->sub.websocket=0;
   lcf->sub.http_chunked=0;
   
+  // lcf->group is already zeroed
+  lcf->group.enable_accounting = NGX_CONF_UNSET;
+  
   lcf->shared_data_index=NGX_CONF_UNSET;
   
   lcf->authorize_request_url = NULL;
   lcf->publisher_upstream_request_url = NULL;
   lcf->unsubscribe_request_url = NULL;
   lcf->subscribe_request_url = NULL;
+  lcf->channel_group = NULL;
   
   lcf->message_timeout=NGX_CONF_UNSET;
   lcf->max_messages=NGX_CONF_UNSET;
@@ -112,6 +144,9 @@ static void *nchan_create_loc_conf(ngx_conf_t *cf) {
   lcf->channel_events_channel_id = NULL;
   lcf->channel_event_string = NULL;
   
+  lcf->websocket_heartbeat.enabled=NGX_CONF_UNSET;
+  
+  lcf->message_compression = NCHAN_MSG_COMPRESSION_INVALID;
   
   lcf->longpoll_multimsg=NGX_CONF_UNSET;
   lcf->longpoll_multimsg_use_raw_stream_separator=NGX_CONF_UNSET;
@@ -125,7 +160,9 @@ static void *nchan_create_loc_conf(ngx_conf_t *cf) {
   lcf->redis.url_enabled=NGX_CONF_UNSET;
   lcf->redis.ping_interval = NGX_CONF_UNSET;
   lcf->redis.upstream_inheritable=NGX_CONF_UNSET;
+  lcf->redis.storage_mode = REDIS_MODE_CONF_UNSET;
   
+  lcf->request_handler = NULL;
   return lcf;
 }
 
@@ -153,6 +190,36 @@ static char * create_complex_value_from_ngx_str(ngx_conf_t *cf, ngx_http_complex
   return NGX_CONF_OK;
 }
 
+static int is_pub_location(nchan_loc_conf_t *lcf) {
+  return lcf->pub.http || lcf->pub.websocket;
+}
+static int is_sub_location(nchan_loc_conf_t *lcf) {
+  nchan_conf_subscriber_types_t s = lcf->sub;
+  return s.poll || s.http_raw_stream || s.longpoll || s.http_chunked || s.http_multipart || s.eventsource || s.websocket;
+}
+static int is_group_location(nchan_loc_conf_t *lcf) {
+  return lcf->group.get || lcf->group.set || lcf->group.delete;
+}
+
+static int is_valid_location(ngx_conf_t *cf, nchan_loc_conf_t *lcf) {
+  
+  if(is_group_location(lcf)) {
+    if(is_pub_location(lcf) && is_sub_location(lcf)) {
+      ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "Can't have a publisher and subscriber location and also be a group access location (nchan_group + nchan_publisher, nchan_subscriber or nchan_pubsub)");
+      return 0;
+    }
+    else if(is_pub_location(lcf)) {
+      ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "Can't have a publisher location and also be a group access location (nchan_group + nchan_publisher)");
+      return 0;
+    }
+    else if(is_sub_location(lcf)) {
+      ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "Can't have a subscriber location and also be a group access location (nchan_group + nchan_subscriber)");
+      return 0;
+    }
+  }
+  return 1;
+}
+
 static char *ngx_conf_set_redis_upstream(ngx_conf_t *cf, ngx_str_t *url, void *conf) {  
   ngx_url_t             upstream_url;
   nchan_loc_conf_t     *lcf = conf;
@@ -175,6 +242,15 @@ static char *ngx_conf_set_redis_upstream(ngx_conf_t *cf, ngx_str_t *url, void *c
   return NGX_CONF_OK;
 }
 
+static char *nchan_setup_handler(ngx_conf_t *cf, ngx_int_t (*handler)(ngx_http_request_t *)) {
+  ngx_http_core_loc_conf_t       *clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+  //nchan_loc_conf_t               *plcf = conf;
+  clcf->handler = handler;
+  clcf->if_modified_since = NGX_HTTP_IMS_OFF;
+  
+  return NGX_CONF_OK;
+}
+
 static char * nchan_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   nchan_loc_conf_t       *prev = parent, *conf = child;
   
@@ -188,6 +264,20 @@ static char * nchan_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_conf_merge_bitmask_value(conf->sub.eventsource, prev->sub.eventsource, 0);
   ngx_conf_merge_bitmask_value(conf->sub.http_chunked, prev->sub.http_chunked, 0);
   ngx_conf_merge_bitmask_value(conf->sub.websocket, prev->sub.websocket, 0);
+  
+  //group request types
+  ngx_conf_merge_bitmask_value(conf->group.get, prev->group.get, 0);
+  ngx_conf_merge_bitmask_value(conf->group.set, prev->group.set, 0);
+  ngx_conf_merge_bitmask_value(conf->group.delete, prev->group.delete, 0);
+  
+  ngx_conf_merge_value(conf->group.enable_accounting, prev->group.enable_accounting, 0);
+  
+  //validate location
+  if(!is_valid_location(cf, conf)) {
+    return NGX_CONF_ERROR;
+  }
+  
+  MERGE_UNSET_CONF(conf->message_compression, prev->message_compression, NCHAN_MSG_COMPRESSION_INVALID, NCHAN_MSG_NO_COMPRESSION);
   
   ngx_conf_merge_sec_value(conf->message_timeout, prev->message_timeout, NCHAN_DEFAULT_MESSAGE_TIMEOUT);
   ngx_conf_merge_value(conf->max_messages, prev->max_messages, NCHAN_DEFAULT_MAX_MESSAGES);
@@ -212,13 +302,17 @@ static char * nchan_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_conf_merge_str_value(conf->subscriber_http_raw_stream_separator, prev->subscriber_http_raw_stream_separator, "\n");
   
   ngx_conf_merge_str_value(conf->channel_id_split_delimiter, prev->channel_id_split_delimiter, "");
-  ngx_conf_merge_str_value(conf->channel_group, prev->channel_group, "");
-  ngx_conf_merge_str_value(conf->allow_origin, prev->allow_origin, "*");
+  MERGE_CONF(conf, prev, allow_origin);
   ngx_conf_merge_str_value(conf->eventsource_event, prev->eventsource_event, "");
   ngx_conf_merge_str_value(conf->custom_msgtag_header, prev->custom_msgtag_header, "");
   ngx_conf_merge_value(conf->msg_in_etag_only, prev->msg_in_etag_only, 0);
   ngx_conf_merge_value(conf->longpoll_multimsg, prev->longpoll_multimsg, 0);
   ngx_conf_merge_value(conf->longpoll_multimsg_use_raw_stream_separator, prev->longpoll_multimsg_use_raw_stream_separator, 0);
+  
+  ngx_conf_merge_value(conf->websocket_heartbeat.enabled, prev->websocket_heartbeat.enabled, 0);
+  MERGE_CONF(conf, prev, websocket_heartbeat.in);
+  MERGE_CONF(conf, prev, websocket_heartbeat.out);
+  
   MERGE_CONF(conf, prev, channel_events_channel_id);
   MERGE_CONF(conf, prev, channel_event_string);
   
@@ -236,6 +330,13 @@ static char * nchan_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   MERGE_CONF(conf, prev, publisher_upstream_request_url);
   MERGE_CONF(conf, prev, unsubscribe_request_url);
   MERGE_CONF(conf, prev, subscribe_request_url);
+  MERGE_CONF(conf, prev, channel_group);
+  
+  MERGE_CONF(conf, prev, group.max_channels);
+  MERGE_CONF(conf, prev, group.max_subscribers);
+  MERGE_CONF(conf, prev, group.max_messages);
+  MERGE_CONF(conf, prev, group.max_messages_shm_bytes);
+  MERGE_CONF(conf, prev, group.max_messages_file_bytes);
   
   if(conf->pub_chid.n == 0) {
     conf->pub_chid = prev->pub_chid;
@@ -265,6 +366,7 @@ static char * nchan_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_conf_merge_value(conf->redis.url_enabled, prev->redis.url_enabled, 0);
   ngx_conf_merge_value(conf->redis.upstream_inheritable, prev->redis.upstream_inheritable, 0);
   ngx_conf_merge_str_value(conf->redis.url, prev->redis.url, NCHAN_REDIS_DEFAULT_URL);
+  ngx_conf_merge_str_value(conf->redis.namespace, prev->redis.namespace, "");
   ngx_conf_merge_value(conf->redis.ping_interval, prev->redis.ping_interval, NCHAN_REDIS_DEFAULT_PING_INTERVAL_TIME);
   if(conf->redis.url_enabled) {
     conf->redis.enabled = 1;
@@ -274,17 +376,16 @@ static char * nchan_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
     conf->redis.upstream_url = prev->redis.upstream_url;
     ngx_conf_set_redis_upstream(cf, &conf->redis.upstream_url, conf);
   }
+  if(conf->redis.storage_mode == REDIS_MODE_CONF_UNSET) {
+    conf->redis.storage_mode = prev->redis.storage_mode == REDIS_MODE_CONF_UNSET ? REDIS_MODE_DISTRIBUTED : prev->redis.storage_mode;
+  }
   
-  return NGX_CONF_OK;
-}
-
- //channel id variable
-//publisher and subscriber handlers now.
-static char *nchan_setup_handler(ngx_conf_t *cf, void * conf, ngx_int_t (*handler)(ngx_http_request_t *)) {
-  ngx_http_core_loc_conf_t       *clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
-  //nchan_loc_conf_t               *plcf = conf;
-  clcf->handler = handler;
-  clcf->if_modified_since = NGX_HTTP_IMS_OFF;
+  if(prev->request_handler != NULL && conf->request_handler == NULL) {
+    conf->request_handler = prev->request_handler;
+  }
+  if(conf->request_handler != NULL) {
+    nchan_setup_handler(cf, conf->request_handler);
+  }
   
   return NGX_CONF_OK;
 }
@@ -332,11 +433,11 @@ static char *nchan_set_storage_engine(ngx_conf_t *cf, ngx_command_t *cmd, void *
 #define DISABLED_STRINGS "none", "off", "disabled"
 #define DISABLED_STRINGS_N 3
 
-
 static char *nchan_publisher_directive_parse(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_int_t fail) {
   nchan_loc_conf_t     *lcf = conf;
   ngx_str_t            *val;
   ngx_uint_t            i;
+  
   
   nchan_conf_publisher_types_t *pubt = &lcf->pub;
   
@@ -362,7 +463,11 @@ static char *nchan_publisher_directive_parse(ngx_conf_t *cf, ngx_command_t *cmd,
     }
   }
   
-  return nchan_setup_handler(cf, conf, &nchan_pubsub_handler);
+  if(!is_valid_location(cf, lcf)) {
+    return NGX_CONF_ERROR;
+  }
+  lcf->request_handler = &nchan_pubsub_handler;
+  return NGX_CONF_OK;
 }
 
 static char *nchan_publisher_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
@@ -425,7 +530,12 @@ static char *nchan_subscriber_directive_parse(ngx_conf_t *cf, ngx_command_t *cmd
       }
     }
   }
-  return nchan_setup_handler(cf, conf, &nchan_pubsub_handler);
+  
+  if(!is_valid_location(cf, lcf)) {
+    return NGX_CONF_ERROR;
+  }
+  lcf->request_handler = &nchan_pubsub_handler;
+  return NGX_CONF_OK;
 }
 
 static char *nchan_subscriber_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
@@ -435,18 +545,66 @@ static char *nchan_subscriber_directive(ngx_conf_t *cf, ngx_command_t *cmd, void
 static char *nchan_pubsub_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
   ngx_str_t            *val;
   ngx_uint_t            i;
+  nchan_loc_conf_t     *lcf = conf;
   nchan_publisher_directive_parse(cf, cmd, conf, 0);
   nchan_subscriber_directive_parse(cf, cmd, conf, 0);
   for(i=1; i < cf->args->nelts; i++) {
     val = &((ngx_str_t *) cf->args->elts)[i];
     if(! nchan_strmatch(val, 
-      WEBSOCKET_STRINGS_N + EVENTSOURCE_STRINGS_N + HTTP_CHUNKED_STRINGS_N + HTTP_MULTIPART_STRINGS_N + LONGPOLL_STRINGS_N + INTERVALPOLL_STRINGS_N + DISABLED_STRINGS_N,
-      WEBSOCKET_STRINGS, EVENTSOURCE_STRINGS, HTTP_CHUNKED_STRINGS, HTTP_MULTIPART_STRINGS, LONGPOLL_STRINGS_N, INTERVALPOLL_STRINGS_N, DISABLED_STRINGS_N)) {
+      WEBSOCKET_STRINGS_N + EVENTSOURCE_STRINGS_N + HTTP_CHUNKED_STRINGS_N + HTTP_MULTIPART_STRINGS_N + LONGPOLL_STRINGS_N + INTERVALPOLL_STRINGS_N + HTTP_RAW_STREAM_STRINGS_N + DISABLED_STRINGS_N,
+      WEBSOCKET_STRINGS, EVENTSOURCE_STRINGS, HTTP_CHUNKED_STRINGS, HTTP_MULTIPART_STRINGS, LONGPOLL_STRINGS, INTERVALPOLL_STRINGS, HTTP_RAW_STREAM_STRINGS, DISABLED_STRINGS)) {
       ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "invalid %V value: %V", &cmd->name, val);
       return NGX_CONF_ERROR;
     }
   }
-  return nchan_setup_handler(cf, conf, &nchan_pubsub_handler);
+  
+  if(!is_valid_location(cf, lcf)) {
+    return NGX_CONF_ERROR;
+  }
+  
+  return NGX_CONF_OK;
+}
+
+static char *nchan_group_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  nchan_loc_conf_t     *lcf = conf;
+  ngx_str_t            *val;
+  ngx_uint_t            i;
+  nchan_conf_group_t   *group = &lcf->group;
+  
+  if(cf->args->nelts == 1){ //no arguments
+    group->get=1;
+    group->set=1;
+    group->delete=1;
+  }
+  else {
+    for(i=1; i < cf->args->nelts; i++) {
+      val = &((ngx_str_t *) cf->args->elts)[i];
+      if(nchan_strmatch(val, 1, "get")) {
+        group->get=1;
+      }
+      else if(nchan_strmatch(val, 1, "set")) {
+        group->set=1;
+      }
+      else if(nchan_strmatch(val, 1, "delete")) {
+        group->delete=1;
+      }
+      else if(nchan_strmatch(val, 1, "off")) {
+        group->get=0;
+        group->set=0;
+        group->delete=0;
+      }
+      else {
+        ngx_conf_log_error(NGX_LOG_ERR, cf, 0, "invalid %V value: %V", &cmd->name, val);
+        return NGX_CONF_ERROR;
+      }
+    }
+  }
+  
+  if(!is_valid_location(cf, lcf)) {
+    return NGX_CONF_ERROR;
+  }
+  lcf->request_handler = &nchan_group_handler;
+  return NGX_CONF_OK;
 }
 
 static char *nchan_subscriber_first_message_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
@@ -482,6 +640,109 @@ static char *nchan_subscriber_first_message_directive(ngx_conf_t *cf, ngx_comman
   return NGX_CONF_OK;
 }
 
+static char *nchan_websocket_heartbeat_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  nchan_loc_conf_t   *lcf = (nchan_loc_conf_t *)conf;
+  ngx_str_t          *heartbeat_in = &((ngx_str_t *) cf->args->elts)[1];
+  ngx_str_t          *heartbeat_out = &((ngx_str_t *) cf->args->elts)[2];
+  ngx_str_t          *in, *out;
+  lcf->websocket_heartbeat.enabled = 1;
+  
+  in = ngx_pcalloc(cf->pool, sizeof(ngx_str_t) + heartbeat_in->len);
+  in->data = (u_char *)&in[1];
+  in->len = heartbeat_in->len;
+  ngx_memcpy(in->data, heartbeat_in->data, heartbeat_in->len);
+  lcf->websocket_heartbeat.in = in;
+  
+  out = ngx_pcalloc(cf->pool, sizeof(ngx_str_t) + heartbeat_out->len);
+  out->data = (u_char *)&out[1];
+  out->len = heartbeat_out->len;
+  ngx_memcpy(out->data, heartbeat_out->data, heartbeat_out->len);
+  lcf->websocket_heartbeat.out = out;
+  
+  return NGX_CONF_OK;
+}
+
+static char *nchan_conf_deflate_compression_level_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+#if (NGX_ZLIB)
+  nchan_main_conf_t  *mcf = (nchan_main_conf_t *)conf;
+  ngx_int_t           np;
+  ngx_str_t           *value = cf->args->elts;
+  np = ngx_atoi(value[1].data, value[1].len);
+  if (np == NGX_ERROR) {
+    return "invalid number";
+  }
+  if(np < 0 || np > 9) {
+    return "must be between 0 and 9";
+  }
+  
+  mcf->zlib_params.level = np;
+#endif
+  return NGX_CONF_OK;
+}
+
+static char *nchan_conf_deflate_compression_strategy_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+#if (NGX_ZLIB)
+  nchan_main_conf_t   *mcf = (nchan_main_conf_t *)conf;
+  ngx_str_t           *val = cf->args->elts;
+  if(nchan_strmatch(val, 1, "default")) {
+    mcf->zlib_params.strategy = Z_DEFAULT_STRATEGY;
+  }
+  else if(nchan_strmatch(val, 1, "filtered")) {
+    mcf->zlib_params.strategy = Z_FILTERED;
+  }
+  else if(nchan_strmatch(val, 1, "huffman-only")) {
+    mcf->zlib_params.strategy = Z_HUFFMAN_ONLY;
+  }
+  else if(nchan_strmatch(val, 1, "rle")) {
+    mcf->zlib_params.strategy = Z_RLE;
+  }
+  else if(nchan_strmatch(val, 1, "fixed")) {
+    mcf->zlib_params.strategy = Z_FIXED;
+  }
+  else {
+    return "invalid compression strategy";
+  }
+#endif
+  return NGX_CONF_OK;
+}
+
+static char *nchan_conf_deflate_compression_window_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+#if (NGX_ZLIB)
+  nchan_main_conf_t  *mcf = (nchan_main_conf_t *)conf;
+  ngx_int_t           np;
+  ngx_str_t           *value = cf->args->elts;
+  np = ngx_atoi(value[1].data, value[1].len);
+  if (np == NGX_ERROR) {
+    return "invalid number";
+  }
+  if(np < 9 || np > 15) {
+    return "must be between 9 and 15";
+  }
+  
+  mcf->zlib_params.windowBits = -np;
+#endif
+  return NGX_CONF_OK;
+}
+
+static char *nchan_conf_deflate_compression_memlevel_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+#if (NGX_ZLIB)
+  nchan_main_conf_t  *mcf = (nchan_main_conf_t *)conf;
+  ngx_int_t           np;
+  ngx_str_t           *value = cf->args->elts;
+  np = ngx_atoi(value[1].data, value[1].len);
+  if (np == NGX_ERROR) {
+    return "invalid number";
+  }
+  if(np < 9 || np > 15) {
+    return "must be between 1 and 9";
+  }
+  
+  mcf->zlib_params.windowBits = -np;
+#endif
+  return NGX_CONF_OK;
+}
+
+
 static void nchan_exit_worker(ngx_cycle_t *cycle) {
   if(global_redis_enabled) {
     redis_store_prepare_to_exit_worker();
@@ -491,6 +752,11 @@ static void nchan_exit_worker(ngx_cycle_t *cycle) {
     nchan_store_redis.exit_worker(cycle);
   }
   nchan_output_shutdown();
+#if (NGX_ZLIB)
+  if(global_zstream_needed) {
+    nchan_common_deflate_shutdown();
+  }
+#endif
 #if NCHAN_SUBSCRIBER_LEAK_DEBUG
   subscriber_debug_assert_isempty();
 #endif
@@ -501,6 +767,11 @@ static void nchan_exit_master(ngx_cycle_t *cycle) {
   if(global_redis_enabled) {
     nchan_store_redis.exit_master(cycle);
   }
+#if (NGX_ZLIB)
+  if(global_zstream_needed) {
+    nchan_common_deflate_shutdown();
+  }
+#endif
 }
 
 static char *nchan_set_complex_value_array(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, nchan_complex_value_arr_t *chid) {
@@ -668,6 +939,26 @@ static char *nchan_set_raw_subscriber_separator(ngx_conf_t *cf, ngx_command_t *c
   return NGX_CONF_OK;
 }
 
+static char *nchan_set_message_compression_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  ngx_str_t          *val = &((ngx_str_t *) cf->args->elts)[1];
+  nchan_loc_conf_t   *lcf = conf;
+#if (NGX_ZLIB)
+  if(nchan_strmatch(val, 1, "on")) {
+    lcf->message_compression = 1;
+    global_zstream_needed = 1;
+  }
+  else if(nchan_strmatch(val, 1, "off")) {
+    lcf->message_compression = 0;
+  }
+  else {
+    return "invalid value: must be 'on' or 'off'";
+  }
+  return NGX_CONF_OK;
+#else
+  return "cannot use compression, Nginx was built without zlib";
+#endif
+}
+
 static char *nchan_set_longpoll_multipart(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
   ngx_str_t          *val = &((ngx_str_t *) cf->args->elts)[1];
   nchan_loc_conf_t   *lcf = conf;
@@ -692,7 +983,7 @@ static char *ngx_conf_enable_redis(ngx_conf_t *cf, ngx_command_t *cmd, void *con
   char                *rc;
   ngx_flag_t          *fp;
   char                *p = conf;
-  nchan_loc_conf_t    *lcf = (nchan_loc_conf_t *)conf;
+  nchan_loc_conf_t    *lcf = conf;
   
   rc = ngx_conf_set_flag_slot(cf, cmd, conf);
   if(rc == NGX_CONF_ERROR) {
@@ -715,8 +1006,10 @@ static char *ngx_conf_enable_redis(ngx_conf_t *cf, ngx_command_t *cmd, void *con
 }
 
 static char *nchan_stub_status_directive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  nchan_loc_conf_t    *lcf = conf;
   nchan_stub_status_enabled = 1;
-  return nchan_setup_handler(cf, conf, &nchan_stub_status_handler);
+  lcf->request_handler = &nchan_stub_status_handler;
+  return NGX_CONF_OK;
 }
 
 
@@ -757,6 +1050,60 @@ static char *ngx_conf_set_redis_url(ngx_conf_t *cf, ngx_command_t *cmd, void *co
   }
   
   return ngx_conf_set_str_slot(cf, cmd, conf);
+}
+
+static char *ngx_conf_set_redis_namespace_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  //raise(SIGSTOP);
+  ngx_str_t *val = cf->args->elts;
+  ngx_str_t *arg = &val[1];
+
+  if(memchr(arg->data, '{', arg->len)) {
+    return "can't contain character '{'";
+  }
+  
+  if(memchr(arg->data, '}', arg->len)) {
+    return "can't contain character '}'";
+  }
+  
+  if(arg->len > 0 && arg->data[arg->len-1] != ':') {
+    u_char  *nns;
+    if((nns = ngx_palloc(cf->pool, sizeof(arg->len + 2))) == NULL) {
+      return "couldn't allocate redis namespace data";
+    }
+    ngx_memcpy(nns, arg->data, arg->len);
+    nns[arg->len]=':';
+    nns[arg->len+1]='\0';
+    arg->len++;
+    arg->data=nns;
+  }
+  
+  return ngx_conf_set_str_slot(cf, cmd, conf);
+}
+
+static char *ngx_conf_set_redis_storage_mode_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  char                         *p = conf;
+  ngx_str_t                    *val = cf->args->elts;
+  ngx_str_t                    *arg = &val[1];
+  
+  nchan_redis_storage_mode_t   *field;
+
+  field = (nchan_redis_storage_mode_t *) (p + cmd->offset);
+  
+  if(*field != REDIS_MODE_CONF_UNSET) {
+    return "is duplicate";
+  }
+  
+  if(nchan_strmatch(arg, 1, "backup")) {
+    *field = REDIS_MODE_BACKUP;
+  }
+  else if(nchan_strmatch(arg, 1, "distributed")) {
+    *field = REDIS_MODE_DISTRIBUTED;
+  }
+  else {
+    return "is invalid, must be either 'distributed' or 'backup'";
+  }
+  
+  return NGX_CONF_OK;
 }
 
 static char *ngx_conf_set_redis_upstream_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
