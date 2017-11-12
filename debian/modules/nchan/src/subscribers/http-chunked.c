@@ -49,7 +49,7 @@ static ngx_int_t chunked_respond_message(subscriber_t *sub,  nchan_msg_t *msg) {
   ngx_file_t             *file_copy;
   nchan_buf_and_chain_t  *bc = nchan_bufchain_pool_reserve(ctx->bcp, 3);
   ngx_chain_t            *chain;
-  ngx_buf_t              *buf, *msg_buf = msg->buf;
+  ngx_buf_t              *buf, *msg_buf = &msg->buf;
   ngx_int_t               rc;
   
   if(fsub->data.timeout_ev.timer_set) {
@@ -189,7 +189,7 @@ subscriber_t *http_chunked_subscriber_create(ngx_http_request_t *r, nchan_msg_id
   ctx->bcp = ngx_palloc(r->pool, sizeof(nchan_bufchain_pool_t));
   nchan_bufchain_pool_init(ctx->bcp, r->pool);
   
-  nchan_subscriber_common_setup(sub, HTTP_CHUNKED, &sub_name, chunked_fn, 0);
+  nchan_subscriber_common_setup(sub, HTTP_CHUNKED, &sub_name, chunked_fn, 1, 0);
   return sub;
 }
 

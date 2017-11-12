@@ -260,8 +260,11 @@ static const subscriber_t new_internal_sub = {
   NULL,
   NULL,
   0, //reserved
+  0, //enable sub/unsub callbacks
   0, //stick around after response
   1, //destroy after dequeue
   0, //enqueued
-
+#if NCHAN_SUBSCRIBER_LEAK_DEBUG
+  NULL, NULL, NULL
+#endif
 };

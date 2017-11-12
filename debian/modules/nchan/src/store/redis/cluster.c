@@ -3,7 +3,7 @@
 
 #include "redis_nginx_adapter.h"
 
-#include <util/nchan_msgid.h>
+#include <util/nchan_msg.h>
 #include <util/nchan_rbtree.h>
 #include <store/store_common.h>
 
@@ -209,7 +209,7 @@ static char *redis_scan_cluster_nodes_line(char *line, cluster_nodes_line_t *l) 
   if(cur[0]=='\0')
     return NULL;
   
-  nchan_scan_nearest_chr(&max, &rest_line, 2, '\n', '\0');
+  nchan_scan_split_by_chr(&max, strlen((char *)max), &rest_line, '\n');
   l->line = rest_line;
   
   nchan_scan_until_chr_on_line(&rest_line, &l->id,           ' ');
@@ -451,9 +451,13 @@ int clusterKeySlotOk(redisAsyncContext *c, void *r) {
      || nchan_cstr_startswith(reply->str, command_ask_error)) {
       rdstore_data_t  *rdata = c->data;
       
-      rbtree_empty(&rdata->node.cluster->hashslots, NULL, NULL);
-      cluster_set_status(rdata->node.cluster, CLUSTER_NOTREADY);
-      
+      if(rdata->node.cluster == NULL) {
+        ERR("got a cluster error on a non-cluster redis connection: %s", reply->str);
+      }
+      else {
+        rbtree_empty(&rdata->node.cluster->hashslots, NULL, NULL);
+        cluster_set_status(rdata->node.cluster, CLUSTER_NOTREADY);
+      }
       return 0;
     }
     else
@@ -556,7 +560,6 @@ static void retry_commands_traverse_callback(void *data, void *pd) {
 }
 
 static ngx_int_t cluster_run_retry_commands(redis_cluster_t *cluster) {
-  assert(cluster->status = CLUSTER_READY);
   nchan_list_traverse_and_empty(&cluster->retry_commands, retry_commands_traverse_callback, cluster);
   return NGX_OK;
 }
@@ -861,7 +864,7 @@ static void redis_get_cluster_nodes_callback(redisAsyncContext *ac, void *rep, v
     if(cluster->node_connections_pending == 0 && cluster->nodes.master.n < cluster->size) {
       redis_cluster_discover_and_connect_to_missing_nodes(reply, cf, cluster);
     }
-    
+    rdata_set_status_flag(rdata, cluster_checked, 1);
   }
   else {
     DBG("my_rdata was blank... eh?...");
@@ -887,7 +890,7 @@ static ngx_int_t cluster_set_status(redis_cluster_t *cluster, redis_cluster_stat
     while((ch_cur = cluster->orphan_channels_head) != NULL) {
       redis_chanhead_gc_withdraw(ch_cur);
       
-      ensure_chanhead_pubsub_subscribed(ch_cur);
+      ensure_chanhead_pubsub_subscribed_if_needed(ch_cur);
       
       cluster->orphan_channels_head = ch_cur->rd_next;
       if(cluster->orphan_channels_head) {

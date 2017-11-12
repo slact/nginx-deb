@@ -24,7 +24,7 @@ static void rawstream_ensure_headers_sent(full_subscriber_t *fsub) {
 static ngx_int_t rawstream_respond_message(subscriber_t *sub,  nchan_msg_t *msg) {
   
   full_subscriber_t      *fsub = (full_subscriber_t  *)sub;
-  ngx_buf_t              *buf, *msg_buf = msg->buf;
+  ngx_buf_t              *buf, *msg_buf = &msg->buf;
   ngx_int_t               rc;
   nchan_loc_conf_t       *cf = ngx_http_get_module_loc_conf(fsub->sub.request, ngx_nchan_module);
   nchan_request_ctx_t    *ctx = ngx_http_get_module_ctx(fsub->sub.request, ngx_nchan_module);
@@ -33,7 +33,7 @@ static ngx_int_t rawstream_respond_message(subscriber_t *sub,  nchan_msg_t *msg)
   ngx_file_t             *file_copy;
   
   size_t                  separator_len = cf->subscriber_http_raw_stream_separator.len;
-  size_t                  msg_len = ngx_buf_size((msg->buf));
+  size_t                  msg_len = ngx_buf_size(msg_buf);
   
   
   if(fsub->data.timeout_ev.timer_set) {
@@ -144,7 +144,7 @@ subscriber_t *http_raw_stream_subscriber_create(ngx_http_request_t *r, nchan_msg
   ctx->bcp = ngx_palloc(r->pool, sizeof(nchan_bufchain_pool_t));
   nchan_bufchain_pool_init(ctx->bcp, r->pool);
   
-  nchan_subscriber_common_setup(sub, HTTP_RAW_STREAM, &sub_name, rawstream_fn, 0);
+  nchan_subscriber_common_setup(sub, HTTP_RAW_STREAM, &sub_name, rawstream_fn, 1, 0);
   return sub;
 }
 
