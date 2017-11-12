@@ -13,7 +13,6 @@ Build-Depends: autotools-dev,
                libexpat-dev,
                libgd-dev,
                libgeoip-dev,
-               libhiredis-dev,
                liblua5.1-0-dev [!i386 !amd64 !kfreebsd-i386 !armel !armhf !powerpc !powerpcspe !mips !mipsel],
                libluajit-5.1-dev [i386 amd64 kfreebsd-i386 armel armhf powerpc powerpcspe mips mipsel],
                libmhash-dev,
@@ -296,7 +295,7 @@ Description: Fast, flexible pub/sub server for Nginx
  distributed among any number of worker processes. It can also scale to many
  nginx server instances with Redis.
  .
- Full documentation available at https://nchan.slact.net
+ Full documentation available at https://nchan.io
 
 Package: libnginx-mod-http-echo
 Architecture: any

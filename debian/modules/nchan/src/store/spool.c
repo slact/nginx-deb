@@ -260,6 +260,7 @@ static ngx_int_t spool_nextmsg(subscriber_pool_t *spool, nchan_msg_id_t *new_las
       switch(newspool->msg_status) {
         case MSG_CHANNEL_NOTREADY:
           newspool->msg_status = MSG_INVALID;
+          /*fallthrough*/
         case MSG_INVALID:
           spool_fetch_msg(newspool);
           break;
@@ -360,7 +361,13 @@ static ngx_int_t spool_fetch_msg_callback(nchan_msg_status_t findmsg_status, nch
         spool->msg = NULL;
       }
       break;
-      
+    
+    case MSG_CHANNEL_NOTREADY:
+      //just wait it out
+      spool->msg = NULL;
+      spool->msg_status = findmsg_status;
+      break;
+    
     case MSG_NORESPONSE:
       if(prev_status == MSG_PENDING) {
         spool->msg_status = MSG_INVALID;
@@ -382,6 +389,7 @@ static ngx_int_t spool_fetch_msg_callback(nchan_msg_status_t findmsg_status, nch
         spool->msg_status = prev_status;
         break;
       }
+      /*fallthrough*/
     case MSG_EXPIRED:
       //is this right?
       //TODO: maybe message-expired notification
@@ -932,7 +940,7 @@ static ngx_int_t spooler_respond_message(channel_spooler_t *self, nchan_msg_t *m
   }
   
   spool = get_spool(self, &latest_msg_id);
-  if(spool->sub_count > 0) {
+  if(spool->sub_count > 0 && *self->channel_buffer_complete) {
 #if NCHAN_BENCHMARK
     responded_subs += spool->sub_count;
 #endif
@@ -1047,7 +1055,7 @@ static int its_time_for_a_spooling_filter(void *data) {
 static ngx_int_t its_time_for_a_spooling(rbtree_seed_t *seed, subscriber_pool_t *spool, void *data) {
   ngx_int_t       rc;
   //validate_spool(spool);
-  assert(spool->msg_status == MSG_CHANNEL_NOTREADY);
+  assert(spool->msg_status == MSG_CHANNEL_NOTREADY || spool->msg_status == MSG_INVALID);
   spool->msg_status = MSG_INVALID;
   rc = spool_fetch_msg(spool);
   assert(rc == NGX_OK || rc == NGX_DONE);
@@ -1115,7 +1123,7 @@ static channel_spooler_fn_t  spooler_fn = {
   spooler_prepare_to_stop
 };
 
-channel_spooler_t *start_spooler(channel_spooler_t *spl, ngx_str_t *chid, chanhead_pubsub_status_t *channel_status, nchan_store_t *store, nchan_loc_conf_t *cf, spooler_fetching_strategy_t fetching_strategy, channel_spooler_handlers_t *handlers, void *handlers_privdata) {
+channel_spooler_t *start_spooler(channel_spooler_t *spl, ngx_str_t *chid, chanhead_pubsub_status_t *channel_status, uint8_t *channel_buffer_complete, nchan_store_t *store, nchan_loc_conf_t *cf, spooler_fetching_strategy_t fetching_strategy, channel_spooler_handlers_t *handlers, void *handlers_privdata) {
   if(!spl->running) {
     ngx_memzero(spl, sizeof(*spl));
     rbtree_init(&spl->spoolseed, "spooler msg_id tree", spool_rbtree_node_id, spool_rbtree_bucketer, spool_rbtree_compare);
@@ -1130,6 +1138,7 @@ channel_spooler_t *start_spooler(channel_spooler_t *spl, ngx_str_t *chid, chanhe
     spl->store = store;
     
     spl->channel_status = channel_status;
+    spl->channel_buffer_complete = channel_buffer_complete;
     
     spl->running = 1;
     //spl->want_to_stop = 0;
@@ -1176,7 +1185,7 @@ static ngx_int_t remove_spool(subscriber_pool_t *spool) {
 
 static ngx_int_t destroy_spool(subscriber_pool_t *spool) {
   rbtree_seed_t         *seed = &spool->spooler->spoolseed;
-  spooled_subscriber_t  *ssub;
+  spooled_subscriber_t  *ssub, *ssub_next;
   subscriber_t          *sub;
   ngx_rbtree_node_t     *node = rbtree_node_from_data(spool);
   
@@ -1184,8 +1193,9 @@ static ngx_int_t destroy_spool(subscriber_pool_t *spool) {
   
   DBG("destroy spool node %p", node);
   
-  for(ssub = spool->first; ssub!=NULL; ssub=ssub->next) {
+  for(ssub = spool->first; ssub!=NULL; ssub = ssub_next) {
     sub = ssub->sub;
+    ssub_next = ssub->next;
     //DBG("dequeue sub %p in spool %p", sub, spool);
     sub->fn->dequeue(sub);
   }

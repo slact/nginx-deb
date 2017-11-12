@@ -14,10 +14,11 @@
 #define ERR(fmt, arg...) ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "SUB:COMMON:" fmt, ##arg)
 
 typedef struct {
-  subscriber_t    *sub;
-  ngx_str_t       *ch_id;
-  ngx_int_t        rc;
-  ngx_int_t        http_response_code;
+  subscriber_t       *sub;
+  ngx_str_t          *ch_id;
+  ngx_int_t           rc;
+  ngx_int_t           http_response_code;
+  ngx_http_cleanup_t *timer_cleanup;
 } nchan_subrequest_data_t;
 
 
@@ -151,13 +152,29 @@ static ngx_int_t generic_subscriber_subrequest_old(subscriber_t *sub, ngx_http_c
 static void subscriber_authorize_timer_callback_handler(ngx_event_t *ev) {
   nchan_subrequest_data_t *d = ev->data;
   
+  d->timer_cleanup->data = NULL;
+  
   d->sub->fn->release(d->sub, 1);
   
   if(d->rc == NGX_OK) {
     ngx_int_t code = d->http_response_code;
     if(code >= 200 && code <299) {
       //authorized. proceed as planned
+      
+      //get subscribe callback data from sub in advance, in case it is destroyed during nchan_subscriber_subscribe()
+      ngx_connection_t  *c = NULL;
+      int                enabled_subscribe_callback = d->sub->enable_sub_unsub_callbacks;
+      if(enabled_subscribe_callback) {
+        c = d->sub->request->connection;
+      }
+      
       nchan_subscriber_subscribe(d->sub, d->ch_id);
+      if(enabled_subscribe_callback) {
+        //there might be a subscribe subrequest we need to run
+        //because we're in a timer event outside the request processing loop,
+        //the subrequest handling must be initiated manually
+        ngx_http_run_posted_requests(c);
+      }
     }
     else { //anything else means forbidden
       d->sub->fn->respond_status(d->sub, NGX_HTTP_FORBIDDEN, NULL); //auto-closes subscriber
@@ -167,6 +184,12 @@ static void subscriber_authorize_timer_callback_handler(ngx_event_t *ev) {
     d->sub->fn->respond_status(d->sub, NGX_HTTP_INTERNAL_SERVER_ERROR, NULL); //auto-closes subscriber
   }
 
+}
+
+static void subscriber_authorize_timer_callback_cleanup(ngx_event_t *timer) {
+  if(timer) {
+    ngx_del_timer(timer);
+  }
 }
 
 static ngx_int_t subscriber_authorize_callback(ngx_http_request_t *r, void *data, ngx_int_t rc) {
@@ -179,14 +202,24 @@ static ngx_int_t subscriber_authorize_callback(ngx_http_request_t *r, void *data
     //subscriber's sudden_abort_handler is called
   }
   else {
+    ngx_http_cleanup_t           *cln = ngx_http_cleanup_add(r, 0);
+    if(!cln) {
+      return NGX_ERROR;
+    }
+    
     d->rc = rc;
     d->http_response_code = r->headers_out.status;
+    d->timer_cleanup = cln;
+    
     if((timer = ngx_pcalloc(r->pool, sizeof(*timer))) == NULL) {
       return NGX_ERROR;
     }
     timer->handler = subscriber_authorize_timer_callback_handler;
     timer->log = d->sub->request->connection->log;
     timer->data = data;
+    
+    cln->data = timer;
+    cln->handler = (ngx_http_cleanup_pt )subscriber_authorize_timer_callback_cleanup;
     
     ngx_add_timer(timer, 0); //not sure if this needs to be done like this, but i'm just playing it safe here.
   }
@@ -228,16 +261,20 @@ ngx_int_t nchan_subscriber_unsubscribe_request(subscriber_t *sub, ngx_int_t fina
   ngx_int_t                    ret;
   //ngx_http_upstream_conf_t    *ucf;
   
-  if(sub->type == LONGPOLL || sub->type == INTERVALPOLL) {
-    //don't do this for longpoll subscribers. It's still buggy and not efficient anyway
+  if(!sub->enable_sub_unsub_callbacks) {
     return NGX_OK;
   }
   
   nchan_request_ctx_t         *ctx = ngx_http_get_module_ctx(sub->request, ngx_nchan_module);
   ngx_http_request_t          *subrequest;
-  ctx->unsubscribe_request_callback_finalize_code = finalize_code;
-  ret = generic_subscriber_subrequest_old(sub, sub->cf->unsubscribe_request_url, subscriber_unsubscribe_request_callback, &subrequest, NULL);
-  ctx->sent_unsubscribe_request = 1;
+  if(!ctx->sent_unsubscribe_request) {
+    ctx->unsubscribe_request_callback_finalize_code = finalize_code;
+    ret = generic_subscriber_subrequest_old(sub, sub->cf->unsubscribe_request_url, subscriber_unsubscribe_request_callback, &subrequest, NULL);
+    ctx->sent_unsubscribe_request = 1;
+  }
+  else {
+    ret = NGX_OK;
+  }
   
   //ucf = ngx_http_get_module_loc_conf(subrequest, ngx_http_upstream_module);
   //ucf->ignore_client_abort = 1;
@@ -266,13 +303,13 @@ ngx_int_t nchan_subscriber_subscribe_request(subscriber_t *sub) {
 
 ngx_int_t nchan_subscriber_subscribe(subscriber_t *sub, ngx_str_t *ch_id) {
   ngx_int_t             ret;
-  //nchan_request_ctx_t  *ctx = ngx_http_get_module_ctx(sub->request, ngx_nchan_module);
-  subscriber_type_t     sub_type = sub->type;
+  nchan_request_ctx_t  *ctx = ngx_http_get_module_ctx(sub->request, ngx_nchan_module);
   nchan_loc_conf_t     *cf = sub->cf;
+  int                   enable_sub_unsub_callbacks = sub->enable_sub_unsub_callbacks;
   
   ret = sub->cf->storage_engine->subscribe(ch_id, sub);
   //don't access sub directly, it might have already been freed
-  if(ret == NGX_OK && sub_type != LONGPOLL && sub_type != INTERVALPOLL && cf->subscribe_request_url) {
+  if(ret == NGX_OK && enable_sub_unsub_callbacks && cf->subscribe_request_url && ctx->sub == sub) {
     nchan_subscriber_subscribe_request(sub);
   }
   return ret;
@@ -415,12 +452,12 @@ void nchan_subscriber_init(subscriber_t *sub, const subscriber_t *tmpl, ngx_http
   
 }
 
-void nchan_subscriber_common_setup(subscriber_t *sub, subscriber_type_t type, ngx_str_t *name, subscriber_fn_t *fn, ngx_int_t dequeue_after_response) {
+void nchan_subscriber_common_setup(subscriber_t *sub, subscriber_type_t type, ngx_str_t *name, subscriber_fn_t *fn, ngx_int_t enable_sub_unsub_callbacks, ngx_int_t dequeue_after_response) {
   nchan_request_ctx_t  *ctx = ngx_http_get_module_ctx(sub->request, ngx_nchan_module);
   sub->type = type;
   sub->name = name;
   sub->fn = fn;
-  
+  sub->enable_sub_unsub_callbacks = enable_sub_unsub_callbacks;
   sub->dequeue_after_response = dequeue_after_response;
   if(ctx) {
     ctx->subscriber_type = sub->name;
@@ -460,24 +497,6 @@ ngx_str_t nchan_subscriber_set_recyclable_msgid_str(nchan_request_ctx_t *ctx, nc
   nchan_strcpy(&ret, msgid_to_str(msgid), MSGID_BUF_LEN);
   
   return ret;
-}
-
-void ngx_init_set_membuf(ngx_buf_t *buf, u_char *start, u_char *end) {
-  ngx_memzero(buf, sizeof(*buf));
-  buf->start = start;
-  buf->pos = start;
-  buf->end = end;
-  buf->last = end;
-  buf->memory = 1;
-}
-
-void ngx_init_set_membuf_str(ngx_buf_t *buf, ngx_str_t *str) {
-  ngx_memzero(buf, sizeof(*buf));
-  buf->start = str->data;
-  buf->pos = str->data;
-  buf->end = str->data + str->len;
-  buf->last = buf->end;
-  buf->memory = 1;
 }
 
 #if nginx_version >= 1003015

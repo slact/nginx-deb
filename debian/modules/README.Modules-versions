@@ -32,8 +32,8 @@ README for Modules versions
   Patch: openssl-1.1.0.patch
 
  nchan
-  Homepage: https://github.com/slact/nchan
-  Version: 1.0.8
+  Homepage: https://nchan.io
+  Version: 1.1.19
 
  nginx-upload-progress
   Homepage: https://github.com/masterzen/nginx-upload-progress-module
